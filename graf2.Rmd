@@ -1,0 +1,296 @@
+---
+title: "Untitled"
+author: "Matteo Vettori"
+date: "2026-04-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+
+# 1. Caricamento e preparazione dati
+df_opt <- read.csv("risultati_seq.csv") %>% mutate(Metodo = "CHW)")
+df_pess <- read.csv("risultati_seq_loopchange.csv") %>% mutate(Metodo = "Loop Interchange")
+
+df_all <- rbind(df_opt, df_pess)
+
+# 2. Filtriamo solo per 3 Canali (se vuoi focalizzarti su uno solo)
+df_filtered <- df_all %>% filter(Channels == 64)
+
+# 3. Calcolo statistiche
+stats <- df_filtered %>%
+  group_by(Size, Metodo) %>%
+  summarise(
+    n = n(),
+    MeanTime = mean(Time_s),
+    SEM = sd(Time_s) / sqrt(n),
+    .groups = 'drop'
+  )
+
+# 4. Plot definitivo
+ggplot(stats, aes(x = as.factor(Size), y = MeanTime, color = Metodo, group = Metodo)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = MeanTime - SEM, ymax = MeanTime + SEM), width = 0.1) +
+  #scale_y_log10() + # Fondamentale perché il "Pessimo" sarà ordini di grandezza più lento
+  theme_minimal() +
+  labs(
+    x = "Dimensione Immagine",
+    y = "Tempo Medio",
+    color = "Strategia:"
+  ) +
+  theme(legend.position = "bottom")
+```
+```{r}
+ggplot(df_final, aes(x = factor(Size), y = MeanTime, color = Metodo, group = Metodo)) +
+  geom_line(size = 1.0) +
+  geom_point(size = 2.5) +
+  geom_errorbar(aes(ymin = MeanTime - SEM, ymax = MeanTime + SEM), width = 0.2) +
+  # Usiamo facet_wrap per separare i grafici per numero di canali
+  facet_wrap(~Channels, scales = "free_y", labeller = label_both) +
+  scale_y_log10() + 
+  theme_minimal() +
+  labs(
+    title = "Impatto della Cache Locality sulle Performance",
+    subtitle = "Confronto tra Layout CHW e Loop Interchange suddiviso per Canali",
+    x = "Dimensione Immagine (NxN)",
+    y = "Tempo Medio (s, scala log)",
+    color = "Strategia:"
+  ) +
+  theme(legend.position = "bottom", axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+```{r}
+library(dplyr)
+# Se non hai il pacchetto knitr, installalo con: install.packages("knitr")
+library(knitr) 
+
+# Caricamento e filtraggio dati
+df_seq <- read.csv("risultati_seq.csv")
+
+tabella_128 <- df_seq %>%
+  filter(Channels == 128) %>%
+  group_by(Size) %>%
+  summarise(
+    `Tempo Medio (s)` = mean(Time_s),
+    .groups = 'drop'
+  ) %>%
+  # Calcolo del tempo per singolo pixel in Nanosecondi (10^9)
+  # Totale operazioni = Size * Size * Channels
+  mutate(
+    `Time per Pixel (ns)` = (`Tempo Medio (s)` / (Size * Size * 128)) * 1e9
+  )
+
+# Arrotondamento per pulizia visiva
+tabella_128$`Tempo Medio (s)` <- round(tabella_128$`Tempo Medio (s)`, 4)
+tabella_128$`Time per Pixel (ns)` <- round(tabella_128$`Time per Pixel (ns)`, 2)
+
+# Generazione automatica del codice LaTeX
+cat("\n--- COPIA QUESTO CODICE IN OVERLEAF ---\n\n")
+kable(tabella_128, format = "latex", booktabs = TRUE, 
+      caption = "Analisi del Tempo per Pixel nel codice Sequenziale (128 Canali)",
+      label = "tab:seq_time_pixel")
+cat("\n---------------------------------------\n")
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+
+df_opz1 <- read.csv("risultati_par_opz1.csv")
+
+stat_threads <- df_opz1 %>%
+  filter(Size == 512) %>%
+  group_by(Channels, Threads) %>%
+  summarise(n = n(), MeanTime = mean(Time_s), SEM = sd(Time_s) / sqrt(n), .groups = 'drop')
+
+ggplot(stat_threads, aes(x = Threads, y = MeanTime, color = as.factor(Channels), group = Channels)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin = MeanTime - SEM, ymax = MeanTime + SEM), width = 0.1) +
+  #facet_wrap(~Size, scales = "free_y") +
+  theme_minimal() +
+  scale_x_continuous(
+    trans = "log2",
+    breaks = c(0,2, 4, 8, 16, 32, 64, 128)
+  )+
+  labs(
+       x = "Numero di Threads",
+       y = "Tempo (s)",
+       color = "Canali")
+```
+```{r}
+# 1. CARICAMENTO LIBRERIE
+library(ggplot2)
+library(dplyr)
+
+# 2. CARICAMENTO E FUSIONE DATI
+# Leggiamo i 4 CSV e aggiungiamo una colonna "Parallelizzazione" per riconoscerli
+df1 <- read.csv("risultati_par_opz1.csv") %>% mutate(Parallelizzazione = "Solo Canali")
+df2 <- read.csv("risultati_par_opz2.csv") %>% mutate(Parallelizzazione = "Canali e righe")
+df3 <- read.csv("risultati_par_opz3.csv") %>% mutate(Parallelizzazione = "RIghe e colonne")
+
+# Uniamo tutto in un unico grande dataset
+data <- bind_rows(df1, df2, df3)
+
+# Convertiamo in fattori per la corretta visualizzazione nei grafici
+data$Parallelizzazione <- as.factor(data$Parallelizzazione)
+data$Channels <- as.factor(data$Channels)
+data$Size <- as.factor(data$Size)
+
+# --- GRAFICO 1: STABILITÀ E VARIANZA (IL BOXPLOT) ---
+# Mostra chi soffre di Jitter, False Sharing o Overhead
+ggplot(data, aes(x = Parallelizzazione, y = Time_s, fill = Parallelizzazione)) +
+  geom_boxplot(alpha = 0.7, outlier.size = 0.5) +
+  facet_grid(Channels ~ Size, scales = "free_y", labeller = label_both) +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(), # Nasconde i nomi sotto per pulizia (c'è la legenda)
+        legend.position = "bottom") +
+  labs(title = "Confronto Topologie: Stabilità e Tempi di Esecuzione (50 Run)",
+       subtitle = "Righe = Canali, Colonne = Dimensione Immagine",
+       x = "Strategia di Parallelizzazione",
+       y = "Tempo (s)")
+
+# --- GRAFICO 2: I CASI LIMITE (GLI "EDGE CASES") ---
+# Filtriamo solo due casi critici per mostrare chi sopravvive
+# Caso A: Pochi canali, Immagine grande (Test Starvation)
+# Caso B: Tanti canali, Immagine media (Test Overhead)
+edge_cases <- data %>% 
+  filter((Size == 1024 & Channels == 3) | (Size == 256 & Channels == 128)) %>%
+  group_by(Parallelizzazione, Size, Channels) %>%
+  summarise(MeanTime = mean(Time_s), .groups = 'drop')
+
+# Creiamo le label per il grafico
+edge_cases$Scenario <- ifelse(edge_cases$Size == 1024, 
+                              "Caso A: 1024 x 1024 x 3", 
+                              "Caso B: 256 x 256 x 128 ")
+
+ggplot(edge_cases, aes(x = Parallelizzazione, y = MeanTime, fill = Parallelizzazione)) +
+  geom_col(color = "black", alpha = 0.8) +
+  geom_text(aes(label = round(MeanTime, 4)), vjust = -0.5, size = 3) +
+  facet_wrap(~Scenario, scales = "free_y") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none") +
+  labs(
+       x = "", y = "Tempo Medio (s)")
+
+# --- GRAFICO 3: OVERHEAD RELATIVO ---
+# Mostra la scalabilità al crescere dei canali (fissando Size = 512)
+data_512 <- data %>% 
+  filter(Size == 1024) %>%
+  group_by(Parallelizzazione, Threads) %>%
+  summarise(MeanTime = mean(Time_s),  sd_time = sd(Time_s), .groups = 'drop')
+pd <- position_dodge(width = 0.3)
+
+ggplot(data_512, aes(x = Threads, y = MeanTime, color = Parallelizzazione, group = Parallelizzazione)) +
+  geom_line(linewidth = 1, position = pd) +
+  geom_point(size =2,position = pd) +
+  geom_errorbar(aes(
+    ymin = MeanTime - sd_time / sqrt(n),
+    ymax = MeanTime + sd_time / sqrt(n)
+  ), width = 0.2, position = pd) +
+  theme_minimal()+
+  scale_x_continuous(
+    trans = "log2",
+    breaks = c(2, 4, 8, 16, 32, 64, 128)
+  )+
+  labs(x="Threads", y= "Tempo (s)")
+
+
+```
+
+```{r}
+# Calcola media e deviazione standard
+data_summary <- data %>%
+  filter(Threads == 16 & Size == 1024) %>%
+  group_by(Size, Channels, Threads, Parallelizzazione) %>%
+  summarise(
+    n = n(),
+    mean_time = mean(Time_s),
+    sd_time = sd(Time_s),
+    SEM = sd(Time_s) / sqrt(n),
+
+    .groups = 'drop'
+  )
+
+# Grafico a linee con barre di errore
+ggplot(data_summary, aes(x = Channels, y = mean_time, color = Parallelizzazione, group = Parallelizzazione)) +
+  geom_errorbar(aes(ymin = mean_time - SEM, ymax = mean_time + SEM), width = 0.1) +
+  geom_line(linewidth = 1) +
+  geom_point(size=2) +
+  facet_wrap(~Size) +
+  theme_minimal() +
+  labs (x = "Canali", y = "Tempo (s)")
+```
+
+
+```{r}
+library(ggplot2)
+library(dplyr)
+
+# 1. Prepara il Sequenziale come Baseline
+df_seq <- read.csv("risultati_seq.csv") %>%
+  group_by(Size, Channels) %>%
+  summarise(Time_Seq = mean(Time_s), .groups = 'drop')
+
+# 2. Prepara il Parallelo (Opz1)
+df_par <- read.csv("risultati_par_opz1.csv") %>%
+  group_by(Size, Channels, Threads) %>%
+  summarise(Time_Par = mean(Time_s), .groups = 'drop')
+
+# 3. Unisce i dati e calcola lo Speedup
+df_speedup <- inner_join(df_par, df_seq, by = c("Size", "Channels")) %>%
+  mutate(Speedup = Time_Seq / Time_Par)
+
+# STAMPA LA TABELLA DEI VALORI NELLA CONSOLE DI R (Usa questi numeri per la relazione)
+print(df_speedup %>% filter(Size == 512))
+
+# 4. GRAFICO DELLO SPEEDUP (Fissato su Size = 1024)
+ggplot(df_speedup %>% filter(Size == 512 & Channels != 3), 
+       aes(x = Threads, y = Speedup, color = as.factor(Channels), group = Channels)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 3) +
+  theme_minimal() +
+  scale_x_continuous(
+    trans = "log2",
+    breaks = c(0,2, 4, 8, 16, 32, 64, 128)
+  )+
+  labs(
+       x = "Numero di Threads",
+       y = "Speedup Assoluto",
+       color = "Canali")
+```
+```{r}
+library(ggplot2)
+library(dplyr)
+
+df_static <- read.csv("risultati_par_opz1.csv") %>% mutate(Schedule = "Static")
+df_dynamic <- read.csv("risultati_par_dynamic.csv") %>% mutate(Schedule = "Dynamic")
+df_guided <- read.csv("risultati_par_guided.csv") %>% mutate(Schedule = "Guided")
+
+df_sched <- bind_rows(df_static, df_dynamic, df_guided)
+
+# Calcolo delle medie
+stat_sched <- df_sched %>%
+  filter(Size == 1024 & Channels == 64) %>%
+  group_by(Schedule, Threads) %>%
+  summarise(n = n(), MeanTime = mean(Time_s), SEM = sd(Time_s) / sqrt(n), .groups = 'drop')
+
+# Grafico
+ggplot(stat_sched, aes(x = Threads, y = MeanTime, color = Schedule, group = Schedule)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = MeanTime - SEM, ymax = MeanTime + SEM), width = 0.1) +
+  theme_minimal() +
+  labs(title = "Impatto dello Scheduling (Size 1024, Ch 64)",
+       x = "Numero di Threads",
+       y = "Tempo Medio (s)",
+       color = "Scheduling")
+```
+
